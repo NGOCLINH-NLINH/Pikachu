@@ -1,0 +1,8 @@
+inference_service/output/
+__pycache__/
+.venv/
+venv/
+*.pt
+*.onnx
+*.h5
+*.pth
