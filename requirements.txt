@@ -1,0 +1,7 @@
+opencv-python
+supervision
+ultralytics
+numpy
+easyocr
+langgraph
+langgraph
