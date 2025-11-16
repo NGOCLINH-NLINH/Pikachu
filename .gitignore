@@ -6,3 +6,4 @@ venv/
 *.onnx
 *.h5
 *.pth
+.idea/
