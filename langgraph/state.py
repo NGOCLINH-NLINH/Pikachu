@@ -22,6 +22,8 @@ class TrafficState(TypedDict):
     violations: Annotated[List[Dict], "list of detected violations"]
     violation_plates: Annotated[Dict[int, str], "mapping of tracker_id to license plate"]
     
+    llm_reports: Annotated[List[str], "Generated violation reports"]
+    
     human_review_needed: Annotated[bool, "Whether human review is needed"]
     
     next: Annotated[str, "Next action"]
