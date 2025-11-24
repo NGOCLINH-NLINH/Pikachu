@@ -7,3 +7,5 @@ venv/
 *.h5
 *.pth
 .idea/
+.vscode/
+.env

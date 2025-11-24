@@ -2,7 +2,8 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from state import TrafficState
 from inference_service.detector import process_detection
 from inference_service.plate_reader import extract_and_read_plate
-
+from tools.tools import save_violation
+import json
 
 def detect_vehicle(state: TrafficState) -> TrafficState:
     """
@@ -155,5 +156,36 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         return {
             **state,
             "violation_plates": {},
+            "next": "end"
+        }
+        
+def save_db(state: TrafficState) -> TrafficState:
+    """
+    Save violations to db
+    """
+    
+    try: 
+        if state["violations"] is None:
+            return {
+                **state,
+                "next": "end"
+            }
+        
+        saved_count = 0
+        
+        for violation in state["violations"]:
+            violation["plate_number"] = state["violation_plates"].get(violation["tracker_id"], "UNKNOWN")
+            result = save_violation(json.dumps(violation))
+            saved_count += 1
+        print(f"[SAVE] Saved {saved_count} violations to DB")
+        
+        return {
+            **state,
+            "next": "generate_report"
+        }
+    
+    except Exception as e:
+        return {
+            **state,
             "next": "end"
         }
