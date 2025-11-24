@@ -1,24 +1,27 @@
-from typing import Annotated, TypedDict, List, Optional
-import operator
+from typing import Annotated, Any, TypedDict, List, Optional, Dict
 from langchain_core.messages import ToolMessage
 import numpy as np
 
 class TrafficState(TypedDict):
     
+    # Frame info
     frame: Annotated[np.ndarray, "current video frame"]
     frame_id: Annotated[int, "current frame index"]
     timestamp: Annotated[float, "current timestamp in seconds"]
     
+    # Camera metadata
     camera_id: Annotated[str, "camera identifier"]
     location: Annotated[Optional[str], "camera location"]
-    speed: Annotated[float, "vehicle speed in km/h"]
     speed_limit: Annotated[Optional[float], "speed limit in km/h"]
-    plate_number: Annotated[Optional[str], "vehicle plate number"]
     
-    vehicle_detected: Annotated[bool, "whether a vehicle is detected in the frame"]
-    vehicle_bbox: Annotated[Optional[List[int]], "bounding box of detected vehicle [x1, y1, x2, y2]"]
+    # CV res
+    detections: Annotated[Optional[Any], "vehicle detections in the frame"]
+    speed_values: Annotated[Dict[int, float], "speed mapping"]
     
-    tools: Annotated[List[dict], "Available tools"]
-    tool_results: Annotated[List[ToolMessage], "Results from tools"]
+    # violation info
+    violations: Annotated[List[Dict], "list of detected violations"]
+    violation_plates: Annotated[Dict[int, str], "mapping of tracker_id to license plate"]
+    
+    human_review_needed: Annotated[bool, "Whether human review is needed"]
     
     next: Annotated[str, "Next action"]
