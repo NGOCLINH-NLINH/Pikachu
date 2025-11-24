@@ -38,8 +38,5 @@ def report_agent(state: TrafficState) -> TrafficState:
         response = llm_agent.invoke(messages)
         reports.append(response.content)
     
-    return {
-        **state,
-        "llm_reports": reports,
-    }
+    return reports
         
