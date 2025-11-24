@@ -3,6 +3,7 @@ from state import TrafficState
 from inference_service.detector import process_detection
 from inference_service.plate_reader import extract_and_read_plate
 from tools.tools import save_violation
+from agents.report_agent import report_agent
 import json
 
 def detect_vehicle(state: TrafficState) -> TrafficState:
@@ -187,5 +188,30 @@ def save_db(state: TrafficState) -> TrafficState:
     except Exception as e:
         return {
             **state,
+            "next": "end"
+        }
+        
+def generate_report(state: TrafficState) -> TrafficState:
+    """
+    Generate report using LLM
+    """
+    try:
+        if state["violations"] is None:
+            return {
+                **state,
+                "llm_reports": [],
+                "next": "end"
+            }
+        
+        reports = report_agent(state)
+        return {
+            **state,
+            "llm_reports": reports,
+            "next": "end"
+        }
+    except Exception as e:
+        return {
+            **state,
+            "llm_reports": [],
             "next": "end"
         }
