@@ -6,10 +6,11 @@ from typing import List
 import re
 
 
-class PlateReader: 
+class PlateReader:
     
     def __init__(self):
-        self.reader = easyocr.Reader(['en', 'vi'])
+        # Initialize EasyOCR with GPU disabled and with verbose=False to speed up initialization
+        self.reader = easyocr.Reader(['en', 'vi'], gpu=False, verbose=False)
         
     def preprocess_plate_image(self, plate_im: np.ndarray) -> np.ndarray:
         # convert to gray scale
@@ -107,7 +108,13 @@ def extract_and_read_plate(
                     bbox = detections.xyxy[i]
                     plate_im = extract_plate_region(frame, bbox)
                     
+                    print(f"Extracting plate from vehicle #{tracker_id} with speed {speed} km/h")
                     plate_number = reader.read_plate(plate_im)
+                    
+                    if plate_number:
+                        print(f"Plate detected: {plate_number}")
+                    else:
+                        print("No plate detected")
 
                     updated_labels[i] = f"#{tracker_id} {speed} km/h | {plate_number}"
             except ValueError:

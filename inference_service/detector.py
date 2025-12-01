@@ -3,9 +3,7 @@ import numpy as np
 import supervision as sv
 from ultralytics import YOLO
 
-SOURCE = np.array(
-    [[1252, 787], [2298, 803], [5039, 2159], [-550, 2159]]
-)
+SOURCE = None
 TARGET_WIDTH = 25
 TARGET_HEIGHT = 250
 TARGET = np.array(
@@ -58,8 +56,17 @@ def initialize_detector(
         position=sv.Position.BOTTOM_CENTER,
     )
 
-    polygon_zone = sv.PolygonZone(polygon=SOURCE)
-    view_transformer = ViewTransformer(source=SOURCE, target=TARGET)
+    # Create a full-frame polygon zone for better detection with test videos
+    width, height = video_info.resolution_wh
+    source_polygon = np.array([
+        [0, 0],
+        [width, 0],
+        [width, height],
+        [0, height]
+    ])
+    
+    polygon_zone = sv.PolygonZone(polygon=source_polygon)
+    view_transformer = ViewTransformer(source=source_polygon, target=TARGET)
 
     return (
         model,
