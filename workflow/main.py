@@ -1,14 +1,14 @@
 import supervision as sv
-import cv2
+import argparse
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from inference_service.speed_estimator import SpeedEstimator
-from inference_service.detector import initialize_detector, process_detection
-from langgraph.state import TrafficState
+from inference_service.detector import initialize_detector
+from workflow.state import TrafficState
 from langgraph.graph import StateGraph, END
-from langgraph.node.nodes import *
+from workflow.node.nodes import *
 
 cv_models = {}
 
@@ -52,6 +52,10 @@ def create_traffic_graph():
     """
     Create traffic service workflow
     """
+    # Share cv_models with nodes
+    import workflow.node.nodes as nodes
+    nodes.cv_models = cv_models
+    
     workflow = StateGraph(TrafficState)
     
     # Add nodes
@@ -123,7 +127,7 @@ def process_video(
     video_info = sv.VideoInfo.from_video_path(video_path=source_video_path)
     
     initialize_models(
-        model_path="yolo11n.pt",
+        model_path="inference_service\\yolo11n.pt",
         video_info=video_info,
         confidence=0.3,
         iou=0.7
@@ -133,7 +137,17 @@ def process_video(
     
     frame_generator = sv.get_video_frames_generator(source_path=source_video_path)
     
+    # Persistent state for speed tracking
+    persistent_state = {
+        "speed_values": {},
+        "violations": [],
+        "violation_plates": {},
+        "llm_reports": [],
+    }
+    
     for frame_id, frame in enumerate(frame_generator):
+        print(f"\n--- Processing Frame {frame_id} ---")
+        
         initial_state: TrafficState = {
             "frame": frame,
             "frame_id": frame_id,
@@ -142,14 +156,27 @@ def process_video(
             "location": location,
             "speed_limit": speed_limit,
             "detections": None,
-            "speed_values": {},
-            "violations": [],
-            "violation_plates": {},
-            "llm_reports": [],
+            "speed_values": persistent_state["speed_values"],
+            "violations": persistent_state["violations"],
+            "violation_plates": persistent_state["violation_plates"],
+            "llm_reports": persistent_state["llm_reports"],
             "next": "",
         }
         
         result = traffic_app.invoke(initial_state)
+        
+        # Update persistent state with new results
+        persistent_state["speed_values"] = result["speed_values"]
+        persistent_state["violations"] = result["violations"]
+        persistent_state["violation_plates"] = result["violation_plates"]
+        persistent_state["llm_reports"] = result["llm_reports"]
+        
+        # Always show detection results
+        detections_count = len(result["detections"]) if result["detections"] else 0
+        speed_count = len(result["speed_values"])
+        violations_count = len(result["violations"])
+        
+        print(f"Frame {frame_id}: {detections_count} detections, {speed_count} speeds calculated, {violations_count} violations")
         
         if result["violations"]:
             print(f"\n{'='*60}")
@@ -160,16 +187,15 @@ def process_video(
             print('='*60 + "\n")
         
     
-        if frame_id >= 100:  # Process first 100 frames
+        if frame_id >= 50:  # Process first 50 frames to get speed calculations
             break
     
     print("\n✅ Processing complete!")
     
 if __name__ == "__main__":
-    import argparse
     
     parser = argparse.ArgumentParser(description="Standard LangGraph Traffic Monitoring")
-    parser.add_argument("--source_video_path", default="inference_service/data/vehicles.mp4", type=str)
+    parser.add_argument("--source_video_path", default="inference_service/data/plate.mp4", type=str)
     parser.add_argument("--speed_limit", default=60, type=float)
     parser.add_argument("--camera_id", default="CAM_001", type=str)
     parser.add_argument("--location", default="Highway A1 - KM 10", type=str)

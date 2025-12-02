@@ -1,9 +1,9 @@
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from langgraph.state import TrafficState
+from workflow.state import TrafficState
 from inference_service.detector import process_detection
 from inference_service.plate_reader import extract_and_read_plate
-from langgraph.tools.tools import save_violation
-from langgraph.agents.report_agent import report_agent
+from workflow.tools.tools import save_violation
+from workflow.agents.report_agent import report_agent
 import json
 
 # Global variable to store CV models
@@ -60,13 +60,28 @@ def calculate_speed(state: TrafficState) -> TrafficState:
         speed_estimator = cv_models["speed_estimator"]
         speed_labels = speed_estimator.update_and_estimate(state["detections"])
         
+        print(f"[SPEED] Raw speed labels: {speed_labels}")
+        
         speed_values = {}
         
         for labels in speed_labels:
-            parts = labels.split()
-            tracker_id = int(parts[0])
-            speed = float(parts[1])
-            speed_values[tracker_id] = speed
+            if "km/h" in labels:
+                try:
+                    # Parse format like "#1 127 km/h"
+                    parts = labels.split()
+                    tracker_id = int(parts[0].replace("#", ""))
+                    speed_part = parts[1] if len(parts) > 1 else "0"
+                    speed = float(speed_part.split()[0])  # Get first number before "km/h"
+                    speed_values[tracker_id] = speed
+                except:
+                    print(f"[SPEED] Failed to parse speed label: {labels}")
+            else:
+                # Handle labels without km/h (like '#1', '#2', etc.)
+                try:
+                    tracker_id = int(labels.replace("#", ""))
+                    speed_values[tracker_id] = 0.0  # Default speed when no km/h info
+                except:
+                    pass
             
         print(f"[SPEED] calculated speeds: {speed_values}")
         
@@ -133,22 +148,33 @@ def ocr_plate(state: TrafficState) -> TrafficState:
             
         violation_tracker_ids = [v["tracker_id"] for v in state["violations"]]
         
+        # Create speed labels from speed_values for the plate reader
+        speed_labels = []
+        for tracker_id, speed in state["speed_values"].items():
+            speed_labels.append(f"#{tracker_id} {speed} km/h")
+        
         final_labels = extract_and_read_plate(
             state["frame"],
             state["detections"],
-            state["speed_limit"]
+            speed_labels,
+            state["speed_limit"]  
         )
+        print(f"[OCR] extract_and_read_plate returned: {final_labels}")
         
         violation_plates = {}
         for label in final_labels:
-            if "km/h" in label:
-                tracker_id = int(label.split()[0])
-                
-                if tracker_id in violation_tracker_ids:
-                    plate_number = label.split("|")[-1].strip()
-                    violation_plates[tracker_id] = plate_number
+            if "km/h" in label and "|" in label:
+                try:
+                    tracker_id = int(label.split()[0].replace("#", ""))
                     
-        print(f"[OCR] Extracted {len(violation_plates)} plates")
+                    if tracker_id in violation_tracker_ids:
+                        plate_number = label.split("|")[-1].strip()
+                        violation_plates[tracker_id] = plate_number
+                        print(f"[OCR] Vehicle #{tracker_id}: Plate = {plate_number}")
+                except Exception as e:
+                    print(f"[OCR] Error parsing label '{label}': {e}")
+                    
+        print(f"[OCR] Extracted {len(violation_plates)} plates from violations")
         
         return {
             **state,
@@ -157,6 +183,7 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         }
         
     except Exception as e:
+        print(f"[OCR] Error in ocr_plate: {e}")
         return {
             **state,
             "violation_plates": {},
