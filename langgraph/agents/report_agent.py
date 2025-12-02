@@ -1,12 +1,12 @@
-from state import TrafficState
+from langgraph.state import TrafficState
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
 import json
 import os
-from prompts import SYSTEM_PROMPT
+from .prompts import SYSTEM_PROMPT
 
-from tools.tools import lookup_db
+from ..tools.tools import lookup_db
 
 def report_agent(state: TrafficState) -> TrafficState:
     """
