@@ -1,7 +1,7 @@
 from collections import defaultdict, deque
 import numpy as np
 import supervision as sv
-from .detector import ViewTransformer
+from inference_service.detector import ViewTransformer
 
 
 class SpeedEstimator:

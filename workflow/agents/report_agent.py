@@ -1,4 +1,4 @@
-from langgraph.state import TrafficState
+from workflow.state import TrafficState
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from typing import Dict, Any
 from langchain_openai import ChatOpenAI
