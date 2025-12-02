@@ -1,10 +1,14 @@
 import supervision as sv
 import cv2
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from inference_service.speed_estimator import SpeedEstimator
 from inference_service.detector import initialize_detector, process_detection
 from langgraph.state import TrafficState
 from langgraph.graph import StateGraph, END
-from node.nodes import *
+from langgraph.node.nodes import *
 
 cv_models = {}
 
@@ -58,11 +62,11 @@ def create_traffic_graph():
     workflow.add_node("save_db", save_db)
     workflow.add_node("generate_report", generate_report)
     
-    # Set entry
-    workflow.set_entry("detect_vehicle")
+    # Set entry point
+    workflow.set_entry_point("detect_vehicle")
     
     workflow.add_conditional_edges(
-        "detect_vehicles",
+        "detect_vehicle",
         lambda state: state["next"],
         {
             "calculate_speed": "calculate_speed",
@@ -74,39 +78,39 @@ def create_traffic_graph():
         "calculate_speed",
         lambda state: state["next"],
         {
-            "check_violations": "check_violations",
+            "check_violation": "check_violation",
             "end": END
         }
     )
     
     workflow.add_conditional_edges(
-        "check_violations",
+        "check_violation",
         lambda state: state["next"],
         {
-            "ocr_plates": "ocr_plates",
+            "ocr_plate": "ocr_plate",
             "end": END
         }
     )
     
     workflow.add_conditional_edges(
-        "ocr_plates",
+        "ocr_plate",
         lambda state: state["next"],
         {
-            "save_to_database": "save_to_database",
+            "save_db": "save_db",
             "end": END
         }
     )
     
     workflow.add_conditional_edges(
-        "save_to_database",
+        "save_db",
         lambda state: state["next"],
         {
-            "generate_llm_reports": "generate_llm_reports",
+            "generate_report": "generate_report",
             "end": END
         }
     )
     
-    workflow.add_edge("generate_llm_reports", END)
+    workflow.add_edge("generate_report", END)
     
     return workflow.compile()
     
@@ -165,7 +169,7 @@ if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="Standard LangGraph Traffic Monitoring")
-    parser.add_argument("--source_video_path", default="data/vehicles.mp4", type=str)
+    parser.add_argument("--source_video_path", default="inference_service/data/vehicles.mp4", type=str)
     parser.add_argument("--speed_limit", default=60, type=float)
     parser.add_argument("--camera_id", default="CAM_001", type=str)
     parser.add_argument("--location", default="Highway A1 - KM 10", type=str)

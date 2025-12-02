@@ -1,10 +1,13 @@
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from state import TrafficState
+from langgraph.state import TrafficState
 from inference_service.detector import process_detection
 from inference_service.plate_reader import extract_and_read_plate
-from tools.tools import save_violation
-from agents.report_agent import report_agent
+from langgraph.tools.tools import save_violation
+from langgraph.agents.report_agent import report_agent
 import json
+
+# Global variable to store CV models
+cv_models = {}
 
 def detect_vehicle(state: TrafficState) -> TrafficState:
     """
