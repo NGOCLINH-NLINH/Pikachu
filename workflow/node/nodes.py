@@ -151,7 +151,8 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         # Create speed labels from speed_values for the plate reader
         speed_labels = []
         for tracker_id, speed in state["speed_values"].items():
-            speed_labels.append(f"#{tracker_id} {speed} km/h")
+            if speed > state["speed_limit"]:
+                speed_labels.append(f"#{tracker_id} {speed} km/h")
         
         final_labels = extract_and_read_plate(
             state["frame"],
@@ -163,7 +164,7 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         
         violation_plates = {}
         for label in final_labels:
-            if "km/h" in label and "|" in label:
+            if "km/h" in label:
                 try:
                     tracker_id = int(label.split()[0].replace("#", ""))
                     
