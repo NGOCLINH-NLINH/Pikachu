@@ -11,7 +11,7 @@ def lookup_db(plate_number: str) -> str:
     """
     vehicle_data = {
         "30A-123.45": {
-            "id": "00130405771",
+            "id": "001304005771",
             "owner": " Ng Ngoc Linh",
             "phone": "0905123456",
             "address": "123 Duong Hoa",

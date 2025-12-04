@@ -171,7 +171,7 @@ def process_video(
         persistent_state["violation_plates"] = result["violation_plates"]
         persistent_state["llm_reports"] = result["llm_reports"]
         
-        # Always show detection results
+        # show detection results
         detections_count = len(result["detections"]) if result["detections"] else 0
         speed_count = len(result["speed_values"])
         violations_count = len(result["violations"])
@@ -187,7 +187,7 @@ def process_video(
             print('='*60 + "\n")
         
     
-        if frame_id >= 50:  # Process first 50 frames to get speed calculations
+        if frame_id >= 30:  # Process first 30 frames to get speed calculations
             break
     
     print("\n✅ Processing complete!")

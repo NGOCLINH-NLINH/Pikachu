@@ -102,7 +102,7 @@ def extract_and_read_plate(
     for i, (tracker_id, label) in enumerate(zip(detections.tracker_id, labels)):
         if "km/h" in label:
             try:
-                speed = int(label.split()[-2])
+                speed = float(label.split()[-2])
 
                 if speed > speed_threshold:
                     bbox = detections.xyxy[i]
