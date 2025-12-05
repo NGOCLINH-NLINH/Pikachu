@@ -48,9 +48,9 @@ def initialize_models(
     
     print("CV models initialized and cached.")
     
-def create_traffic_graph():
+def create_processing_graph():
     """
-    Create traffic service workflow
+    Create frame processing workflow (without DB save and report generation)
     """
     # Share cv_models with nodes
     import workflow.node.nodes as nodes
@@ -58,13 +58,11 @@ def create_traffic_graph():
     
     workflow = StateGraph(TrafficState)
     
-    # Add nodes
+    # Add nodes for frame processing only
     workflow.add_node("detect_vehicle", detect_vehicle)
     workflow.add_node("calculate_speed", calculate_speed)
     workflow.add_node("check_violation", check_violation)
     workflow.add_node("ocr_plate", ocr_plate)
-    workflow.add_node("save_db", save_db)
-    workflow.add_node("generate_report", generate_report)
     
     # Set entry point
     workflow.set_entry_point("detect_vehicle")
@@ -100,10 +98,24 @@ def create_traffic_graph():
         "ocr_plate",
         lambda state: state["next"],
         {
-            "save_db": "save_db",
-            "end": END
+            "end": END  
         }
     )
+    
+    return workflow.compile()
+
+def create_finalization_graph():
+    """
+    Create finalization workflow for saving DB and generating reports
+    """
+    workflow = StateGraph(TrafficState)
+    
+    # Add nodes for finalization
+    workflow.add_node("save_db", save_db)
+    workflow.add_node("generate_report", generate_report)
+    
+    # Set entry point
+    workflow.set_entry_point("save_db")
     
     workflow.add_conditional_edges(
         "save_db",
@@ -133,17 +145,22 @@ def process_video(
         iou=0.7
     )
     
-    traffic_app = create_traffic_graph()
+    # Create two  workflows
+    processing_app = create_processing_graph()
+    finalization_app = create_finalization_graph()
     
     frame_generator = sv.get_video_frames_generator(source_path=source_video_path)
     
-    # Persistent state for speed tracking
+    # Persistent state for accumulating violations across frames
     persistent_state = {
         "speed_values": {},
         "violations": [],
-        "violation_plates": {},
+        "violation_plates": [],
+        "plate_readings": {},
         "llm_reports": [],
     }
+    
+    total_violations = 0
     
     for frame_id, frame in enumerate(frame_generator):
         print(f"\n--- Processing Frame {frame_id} ---")
@@ -159,38 +176,58 @@ def process_video(
             "speed_values": persistent_state["speed_values"],
             "violations": persistent_state["violations"],
             "violation_plates": persistent_state["violation_plates"],
+            "plate_readings": persistent_state["plate_readings"],
             "llm_reports": persistent_state["llm_reports"],
             "next": "",
         }
         
-        result = traffic_app.invoke(initial_state)
+        # Process frame through detection, speed, violation check, and OCR only
+        result = processing_app.invoke(initial_state)
         
         # Update persistent state with new results
         persistent_state["speed_values"] = result["speed_values"]
-        persistent_state["violations"] = result["violations"]
-        persistent_state["violation_plates"] = result["violation_plates"]
-        persistent_state["llm_reports"] = result["llm_reports"]
-        
-        # show detection results
-        detections_count = len(result["detections"]) if result["detections"] else 0
-        speed_count = len(result["speed_values"])
-        violations_count = len(result["violations"])
-        
-        print(f"Frame {frame_id}: {detections_count} detections, {speed_count} speeds calculated, {violations_count} violations")
         
         if result["violations"]:
-            print(f"\n{'='*60}")
-            print(f"Frame {frame_id}: {len(result['violations'])} violations")
-            for i, report in enumerate(result["llm_reports"]):
-                print(f"\nReport {i+1}:")
-                print(report[:200] + "...")
-            print('='*60 + "\n")
+            persistent_state["violations"].extend(result["violations"])
         
-    
-        if frame_id >= 30:  # Process first 30 frames to get speed calculations
+        if result["violation_plates"]:
+            persistent_state["violation_plates"].extend(result["violation_plates"])
+        
+        violations_count = len(result["violations"])
+        total_violations += violations_count
+        
+        
+        if frame_id >= 20:
             break
     
-    print("\n✅ Processing complete!")
+    print(f"\n{'='*60}")
+    print(f" Finalization phase - Processing {total_violations} violations")
+    print('='*60)
+    
+    finalization_state: TrafficState = {
+        "frame": None,  
+        "frame_id": frame_id,
+        "timestamp": frame_id / video_info.fps,
+        "camera_id": camera_id,
+        "location": location,
+        "speed_limit": speed_limit,
+        "detections": None,
+        "speed_values": persistent_state["speed_values"],
+        "violations": persistent_state["violations"],
+        "violation_plates": persistent_state["violation_plates"],
+        "plate_readings": persistent_state["plate_readings"],
+        "llm_reports": [],
+        "next": "",
+    }
+    
+    # Run finalization workflow
+    final_result = finalization_app.invoke(finalization_state)
+    
+    # Display final reports
+    if final_result["llm_reports"]:
+        print(f"\n Generated {len(final_result['llm_reports'])} reports")
+    
+    print("\n Processing complete!")
     
 if __name__ == "__main__":
     
