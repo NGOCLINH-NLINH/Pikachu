@@ -20,7 +20,7 @@ class TrafficState(TypedDict):
     
     # violation info
     violations: Annotated[List[Dict], "list of detected violations"]
-    violation_plates: Annotated[Dict[int, str], "mapping of tracker_id to license plate"]
+    violation_plates: Annotated[List[Dict], "list of violation plates with frame_id, tracker_id and license plate"]
     
     llm_reports: Annotated[List[str], "Generated violation reports"]
     

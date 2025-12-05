@@ -108,10 +108,11 @@ def check_violation(state: TrafficState) -> TrafficState:
         for tracker_id, speed in state["speed_values"].items():
             if speed > state["speed_limit"]:
                 violation = {
+                    "frame_id": state["frame_id"],
                     "tracker_id": tracker_id,
                     "speed": speed,
                     "speed_limit": state["speed_limit"],
-                    "execess_speed": speed - state["speed_limit"],
+                    "exceed_speed": speed - state["speed_limit"],  
                     "camera_id": state["camera_id"],
                     "location": state["location"],
                     "timestamp": state["timestamp"],
@@ -142,13 +143,12 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         if state["violations"] is None:
             return {
                 **state,
-                "violations_plates": {},
+                "violation_plates": [],
                 "next": "end"
             }
             
         violation_tracker_ids = [v["tracker_id"] for v in state["violations"]]
         
-        # Create speed labels from speed_values for the plate reader
         speed_labels = []
         for tracker_id, speed in state["speed_values"].items():
             if speed > state["speed_limit"]:
@@ -158,11 +158,11 @@ def ocr_plate(state: TrafficState) -> TrafficState:
             state["frame"],
             state["detections"],
             speed_labels,
-            state["speed_limit"]  
+            state["speed_limit"]
         )
         print(f"[OCR] extract_and_read_plate returned: {final_labels}")
         
-        violation_plates = {}
+        violation_plates = []
         for label in final_labels:
             if "km/h" in label:
                 try:
@@ -170,7 +170,15 @@ def ocr_plate(state: TrafficState) -> TrafficState:
                     
                     if tracker_id in violation_tracker_ids:
                         plate_number = label.split("|")[-1].strip()
-                        violation_plates[tracker_id] = plate_number
+                        
+                        if plate_number == "":
+                            continue
+                        
+                        violation_plates.append({
+                            "frame_id": state["frame_id"],
+                            "tracker_id": tracker_id,
+                            "license_plate": plate_number
+                        })
                         print(f"[OCR] Vehicle #{tracker_id}: Plate = {plate_number}")
                 except Exception as e:
                     print(f"[OCR] Error parsing label '{label}': {e}")
@@ -180,14 +188,14 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         return {
             **state,
             "violation_plates": violation_plates,
-            "next": "save_db"
+            "next": "end"
         }
         
     except Exception as e:
         print(f"[OCR] Error in ocr_plate: {e}")
         return {
             **state,
-            "violation_plates": {},
+            "violation_plates": [],
             "next": "end"
         }
         
@@ -195,21 +203,39 @@ def save_db(state: TrafficState) -> TrafficState:
     """
     Save violations to db
     """
+    try:
     
-    try: 
-        if state["violations"] is None:
+        if state["violations"] is None or len(state["violations"]) == 0:
             return {
                 **state,
                 "next": "end"
             }
-        
+       
         saved_count = 0
+        saved_plates = set()
         
-        for violation in state["violations"]:
-            violation["plate_number"] = state["violation_plates"].get(violation["tracker_id"], "UNKNOWN")
-            result = save_violation(json.dumps(violation))
+        for _, violation in enumerate(state["violations"]):
+            plate_number = None
+            for plate_info in state["violation_plates"]:
+                if plate_info["frame_id"] == violation["frame_id"] and \
+                plate_info["tracker_id"] == violation["tracker_id"]:
+                    plate_number = plate_info["license_plate"]
+                    break
+            
+            if plate_number is None:
+                continue
+            
+            if plate_number in saved_plates:
+                continue
+            
+            violation_copy = violation.copy()
+            violation_copy["plate_number"] = plate_number
+            
+            _ = save_violation.invoke({"violation_data": json.dumps(violation_copy)})
             saved_count += 1
-        print(f"[SAVE] Saved {saved_count} violations to DB")
+            saved_plates.add(plate_number)
+        
+        print(f"[SAVE] Saved {saved_count} unique violations to DB")
         
         return {
             **state,
@@ -217,6 +243,7 @@ def save_db(state: TrafficState) -> TrafficState:
         }
     
     except Exception as e:
+        print(f"[SAVE DEBUG] Error in save_db: {e}")
         return {
             **state,
             "next": "end"
