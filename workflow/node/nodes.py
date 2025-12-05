@@ -5,6 +5,9 @@ from inference_service.plate_reader import extract_and_read_plate
 from workflow.tools.tools import save_violation
 from workflow.agents.report_agent import report_agent
 import json
+import os
+from datetime import datetime
+from pathlib import Path
 
 # Global variable to store CV models
 cv_models = {}
@@ -213,6 +216,7 @@ def save_db(state: TrafficState) -> TrafficState:
        
         saved_count = 0
         saved_plates = set()
+        saved_violations = []  # Track violations that were actually saved
         
         for _, violation in enumerate(state["violations"]):
             plate_number = None
@@ -234,16 +238,17 @@ def save_db(state: TrafficState) -> TrafficState:
             _ = save_violation.invoke({"violation_data": json.dumps(violation_copy)})
             saved_count += 1
             saved_plates.add(plate_number)
+            saved_violations.append(violation_copy)  
         
         print(f"[SAVE] Saved {saved_count} unique violations to DB")
         
         return {
             **state,
+            "violations": saved_violations, 
             "next": "generate_report"
         }
     
     except Exception as e:
-        print(f"[SAVE DEBUG] Error in save_db: {e}")
         return {
             **state,
             "next": "end"
@@ -254,6 +259,7 @@ def generate_report(state: TrafficState) -> TrafficState:
     Generate report using LLM
     """
     try:
+        
         if state["violations"] is None:
             return {
                 **state,
@@ -262,12 +268,31 @@ def generate_report(state: TrafficState) -> TrafficState:
             }
         
         reports = report_agent(state)
+        
+        if reports:
+            output_dir = Path("output/reports")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Save individual reports
+            for i, report in enumerate(reports):
+                report_file = output_dir / f"report_{timestamp}_{i+1}.md"
+                with open(report_file, 'w', encoding='utf-8') as f:
+                    f.write(f"Traffic Violation Report #{i+1}\n")
+                    f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write("="*50 + "\n\n")
+                    f.write(report)
+                    f.write("\n\n" + "="*50 + "\n")
+                print(f"[REPORT] Saved report to {report_file}")
+        
         return {
             **state,
             "llm_reports": reports,
             "next": "end"
         }
     except Exception as e:
+        print(f"[REPORT] Error generating/saving reports: {e}")
         return {
             **state,
             "llm_reports": [],
