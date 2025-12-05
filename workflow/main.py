@@ -197,15 +197,17 @@ def process_video(
         total_violations += violations_count
         
         
-        if frame_id >= 20:
+        if frame_id >= 15:
             break
     
     print(f"\n{'='*60}")
     print(f" Finalization phase - Processing {total_violations} violations")
+    print(f" Total violations in persistent_state: {len(persistent_state['violations'])}")
+    print(f" Total violation_plates in persistent_state: {len(persistent_state['violation_plates'])}")
     print('='*60)
     
     finalization_state: TrafficState = {
-        "frame": None,  
+        "frame": None,
         "frame_id": frame_id,
         "timestamp": frame_id / video_info.fps,
         "camera_id": camera_id,
@@ -222,7 +224,7 @@ def process_video(
     
     # Run finalization workflow
     final_result = finalization_app.invoke(finalization_state)
-    
+
     # Display final reports
     if final_result["llm_reports"]:
         print(f"\n Generated {len(final_result['llm_reports'])} reports")
