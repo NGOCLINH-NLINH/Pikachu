@@ -91,6 +91,9 @@ def process_detection(
     detections = sv.Detections.from_ultralytics(result)
 
     detections = detections[detections.confidence > conf_thres]
+    if detections.class_id is not None:
+        is_vehicle = np.isin(detections.class_id, [2, 3, 5, 7])
+        detections = detections[is_vehicle]
     detections = detections[polygon_zone.trigger(detections)]
 
     detections = detections.with_nms(threshold=iou_thres)

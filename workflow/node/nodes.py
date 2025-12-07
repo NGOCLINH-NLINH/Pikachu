@@ -1,13 +1,14 @@
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from workflow.state import TrafficState
 from inference_service.detector import process_detection
-from inference_service.plate_reader import extract_and_read_plate
+from inference_service.plate_reader import extract_and_read_plate, extract_plate_region
 from workflow.tools.tools import save_violation
 from workflow.agents.report_agent import report_agent
 import json
 import os
 from datetime import datetime
 from pathlib import Path
+import cv2
 
 # Global variable to store CV models
 cv_models = {}
@@ -142,6 +143,10 @@ def ocr_plate(state: TrafficState) -> TrafficState:
     """
     OCR license plates
     """
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    output_dir = os.path.join(BASE_DIR, "inference_service", "output", "plates")
+    os.makedirs(output_dir, exist_ok=True)
+
     try:
         if state["violations"] is None:
             return {
@@ -166,6 +171,32 @@ def ocr_plate(state: TrafficState) -> TrafficState:
         print(f"[OCR] extract_and_read_plate returned: {final_labels}")
         
         violation_plates = []
+
+        if state["detections"] is not None and state["detections"].tracker_id is not None:
+
+            for i in range(len(state["detections"])):
+                tracker_id = state["detections"].tracker_id[i]
+
+                if tracker_id in violation_tracker_ids:
+                    bbox = state["detections"].xyxy[i]
+                    speed = state["speed_values"].get(tracker_id, 0)
+
+                    plate_im = extract_plate_region(state["frame"], bbox)
+
+                    plate_number = ""
+                    for label in final_labels:
+                        if f"#{tracker_id}" in label and "|" in label:
+                            plate_number = label.split("|")[-1].strip()
+                            break
+
+                    plate_for_filename = plate_number.replace('-', '') if plate_number else "NO_PLATE"
+
+                    filename = f"{state['frame_id']:05d}_{tracker_id}_{speed:.1f}kmh_{plate_for_filename}.png"
+                    filepath = os.path.join(output_dir, filename)
+
+                    cv2.imwrite(filepath, plate_im)
+                    print(f"[OCR DEBUG] Saved plate image for #{tracker_id} to {filepath}")
+
         for label in final_labels:
             if "km/h" in label:
                 try:
