@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+
 from workflow.state import TrafficState
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from typing import Dict, Any
@@ -8,54 +10,49 @@ from .prompts import SYSTEM_PROMPT
 
 from ..tools.tools import lookup_db
 
-def report_agent(state: TrafficState) -> TrafficState:
+def report_agent(plate_number: str, speed: float, speed_limit: float) -> str:
     """
     Agent to generate report for speeding violations.
     """
+    load_dotenv()
     llm_agent = ChatOpenAI(
         api_key=os.environ.get("API_KEY"),
         base_url="https://api.z.ai/api/coding/paas/v4/",
         model="glm-4.6",
         temperature=0.2,
-    ).bind_tools([lookup_db])
-    
-    violations = state["violations"]
-    reports = []
-    
-    print(f"[REPORT_AGENT] Processing {len(violations)} violations")
-    print(f"[REPORT_AGENT] Available plates: {len(state.get('violation_plates', []))}")
-    
-    for i, violation in enumerate(violations):
-        tid = violation["tracker_id"]
-        fid = violation["frame_id"]
-        
-        plate_number = "UNKNOWN"
-        for plate_info in state["violation_plates"]:
-            if plate_info["frame_id"] == fid and \
-                plate_info["tracker_id"] == tid:
-                plate_number = plate_info["license_plate"]
-                break
-        
-        print(f"[REPORT_AGENT] Violation {i+1}/{len(violations)} for tracker #{tid}, frame #{fid}, plate: {plate_number}")
-        
-        try:
-            vehicle_info = lookup_db.invoke(plate_number)
-            
-            messages = [
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(
-                    content=f"""
-                    Vehicle Info: {vehicle_info}
-                    """
-                )
-            ]
-            
-            response = llm_agent.invoke(messages)
-            reports.append(response.content + "\n")
-            print(f"[REPORT_AGENT] Generated report for tracker #{tid}")
-        except Exception as e:
-            print(f"[REPORT_AGENT] Error generating report for tracker #{tid}: {e}")
-            reports.append(f"Error generating report: {str(e)}")
-    
-    return reports
-        
+    )
+
+    exceed_speed = speed - speed_limit
+
+    print(f"[REPORT_AGENT/API] Request received for plate: {plate_number}, exceed: {exceed_speed:.2f} km/h")
+
+    try:
+        vehicle_info = lookup_db.invoke({"plate_number": plate_number})
+
+        # 2. Xây dựng Prompt
+        prompt_content = f"""
+            Vi phạm tốc độ đã được phát hiện:
+            - Biển số: {plate_number}
+            - Tốc độ thực tế: {speed:.2f} km/h
+            - Tốc độ giới hạn: {speed_limit} km/h
+            - Vượt quá: {exceed_speed:.2f} km/h
+
+            Thông tin Chủ xe (CSDL): {vehicle_info}
+
+            Hãy giải thích chi tiết hành vi vượt quá tốc độ {exceed_speed:.2f} km/h này theo luật giao thông.
+            """
+
+        messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=prompt_content)
+        ]
+
+        # 3. Gọi LLM
+        response = llm_agent.invoke(messages)
+        print(f"[REPORT_AGENT/API] Generated explanation for {plate_number}")
+
+        return response.content
+
+    except Exception as e:
+        print(f"[REPORT_AGENT/API] Error generating explanation for {plate_number}: {e}")
+        return f"Xin lỗi, Agent gặp lỗi khi tra cứu và giải thích vi phạm: {str(e)}"

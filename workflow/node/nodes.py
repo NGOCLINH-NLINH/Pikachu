@@ -266,33 +266,33 @@ def generate_report(state: TrafficState) -> TrafficState:
                 "llm_reports": [],
                 "next": "end"
             }
-        
-        reports = report_agent(state)
-        
-        if reports:
+
+        reports_placeholder = [f"Ticket template prepared for violation #{i + 1}" for i in
+                               range(len(state["violations"]))]
+
+        if reports_placeholder:
             output_dir = Path("output/reports")
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
-            # Save individual reports
-            for i, report in enumerate(reports):
-                report_file = output_dir / f"report_{timestamp}_{i+1}.md"
+
+            # Lưu file đánh dấu hoặc file template đơn giản
+            for i, placeholder in enumerate(reports_placeholder):
+                report_file = output_dir / f"processed_ticket_{timestamp}_{i + 1}.log"
                 with open(report_file, 'w', encoding='utf-8') as f:
-                    f.write(f"Traffic Violation Report #{i+1}\n")
+                    f.write(
+                        f"[DASHBOARD_READY] Violation Ticket #{i + 1} saved to DB and ready for Dashboard display.\n")
                     f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write("="*50 + "\n\n")
-                    f.write(report)
-                    f.write("\n\n" + "="*50 + "\n")
-                print(f"[REPORT] Saved report to {report_file}")
-        
+                    f.write(placeholder)
+                print(f"[REPORT] Marked ticket as processed in {report_file}")
+
         return {
             **state,
-            "llm_reports": reports,
+            "llm_reports": reports_placeholder,  # Giờ là list các string placeholder
             "next": "end"
         }
     except Exception as e:
-        print(f"[REPORT] Error generating/saving reports: {e}")
+        print(f"[REPORT] Error in finalize node: {e}")
         return {
             **state,
             "llm_reports": [],

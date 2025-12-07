@@ -237,7 +237,7 @@ if __name__ == "__main__":
     parser.add_argument("--source_video_path", default="inference_service/data/plate.mp4", type=str)
     parser.add_argument("--speed_limit", default=60, type=float)
     parser.add_argument("--camera_id", default="CAM_001", type=str)
-    parser.add_argument("--location", default="Highway A1 - KM 10", type=str)
+    parser.add_argument("--location", default="Xuan Thuy - KM 10", type=str)
     
     args = parser.parse_args()
     
