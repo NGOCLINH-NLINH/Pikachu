@@ -1,8 +1,13 @@
+import time
+from multiprocessing.managers import DictProxy
+
 import cv2
 import supervision as sv
 import argparse
 import sys
 import os
+
+from workflow.node import nodes
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -142,6 +147,15 @@ def process_video(
         camera_id: str = "CAM_001",
         location: str = "HIGHWAY_1"
 ):
+    ocr_queue_ = nodes.ocr_queue
+    ocr_results_ = nodes.ocr_results
+
+    ocr_process = multiprocessing.Process(
+        target=ocr_worker,
+        args=(ocr_queue_, ocr_results_)
+    )
+    ocr_process.start()
+
     video_info = sv.VideoInfo.from_video_path(video_path=source_video_path)
     print(f"[FPS CHECK]: FPS {video_info.fps}")
     initialize_models(
@@ -205,7 +219,7 @@ def process_video(
             "violation_plates": persistent_state["violation_plates"],
             "plate_readings": persistent_state["plate_readings"],
             "llm_reports": persistent_state["llm_reports"],
-            "next": "",
+            "next": "save_db",
         }
 
         # Process frame through detection, speed, violation check, and OCR only
@@ -269,6 +283,23 @@ def process_video(
         if frame_id >= 100:
             break
 
+    try:
+        ocr_queue_.join()
+    except Exception:
+        pass
+
+    ocr_process.terminate()
+    ocr_process.join()
+
+    final_violation_plates = []
+    for task_id, plate_info in ocr_results_.items():
+        if plate_info.get("license_plate"):
+            final_violation_plates.append({
+                "frame_id": plate_info["frame_id"],
+                "tracker_id": plate_info["tracker_id"],
+                "license_plate": plate_info["license_plate"]
+            })
+
     writer.release()
     print("Video Writer released.")
 
@@ -288,7 +319,7 @@ def process_video(
         "detections": None,
         "speed_values": persistent_state["speed_values"],
         "violations": persistent_state["violations"],
-        "violation_plates": persistent_state["violation_plates"],
+        "violation_plates": final_violation_plates,
         "plate_readings": persistent_state["plate_readings"],
         "llm_reports": [],
         "next": "",
@@ -304,7 +335,48 @@ def process_video(
     print("\n Processing complete!")
 
 
+def ocr_worker(input_queue: multiprocessing.JoinableQueue, output_dict: DictProxy):
+    try:
+        from inference_service.plate_reader import PlateReader
+        reader = PlateReader()
+
+        print("\n=== OCR WORKER STARTED ===\n")
+
+        while True:
+            try:
+                task = input_queue.get(timeout=1)
+                task_id = task["task_id"]
+
+                plate_number = reader.read_plate(task["plate_im"])
+
+                output_dict[task_id] = {
+                    "frame_id": task["frame_id"],
+                    "tracker_id": task["tracker_id"],
+                    "license_plate": plate_number,
+                    "processed_at": time.time()
+                }
+
+                if plate_number:
+                    print(f"[OCR WORKER] Task {task_id} SUCCESS: Plate = {plate_number}")
+                else:
+                    print(f"[OCR WORKER] Task {task_id} NO PLATE detected.")
+
+                input_queue.task_done()
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"[OCR WORKER] Unhandled error: {e}")
+                if input_queue:
+                    input_queue.task_done()
+    except KeyboardInterrupt:
+        print("\n=== OCR WORKER SHUTDOWN ===\n")
+
+
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    nodes.init_multiprocessing_resources()
+
     parser = argparse.ArgumentParser(description="Standard LangGraph Traffic Monitoring")
     parser.add_argument("--source_video_path", default="inference_service/data/plate.mp4", type=str)
     parser.add_argument("--speed_limit", default=60, type=float)

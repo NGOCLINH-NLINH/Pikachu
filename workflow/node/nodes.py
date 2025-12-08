@@ -1,3 +1,6 @@
+import multiprocessing
+import queue
+
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from workflow.state import TrafficState
 from inference_service.detector import process_detection
@@ -138,39 +141,28 @@ def check_violation(state: TrafficState) -> TrafficState:
             "violations": [],
             "next": "end"
         }
-        
-def ocr_plate(state: TrafficState) -> TrafficState:
-    """
-    OCR license plates
-    """
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    output_dir = os.path.join(BASE_DIR, "inference_service", "output", "plates")
-    os.makedirs(output_dir, exist_ok=True)
 
+
+ocr_results = None
+ocr_queue = None
+
+def init_multiprocessing_resources():
+    global ocr_results, ocr_queue
+    manager = multiprocessing.Manager()
+    ocr_results = manager.dict()
+    ocr_queue = manager.JoinableQueue()
+
+
+def ocr_plate(state: TrafficState) -> TrafficState:
     try:
-        if state["violations"] is None:
+        if state["violations"] is None or not state["violations"]:
             return {
                 **state,
                 "violation_plates": [],
                 "next": "end"
             }
-            
+
         violation_tracker_ids = [v["tracker_id"] for v in state["violations"]]
-        
-        speed_labels = []
-        for tracker_id, speed in state["speed_values"].items():
-            if speed > state["speed_limit"]:
-                speed_labels.append(f"#{tracker_id} {speed} km/h")
-        
-        final_labels = extract_and_read_plate(
-            state["frame"],
-            state["detections"],
-            speed_labels,
-            state["speed_limit"]
-        )
-        print(f"[OCR] extract_and_read_plate returned: {final_labels}")
-        
-        violation_plates = []
 
         if state["detections"] is not None and state["detections"].tracker_id is not None:
 
@@ -178,61 +170,36 @@ def ocr_plate(state: TrafficState) -> TrafficState:
                 tracker_id = state["detections"].tracker_id[i]
 
                 if tracker_id in violation_tracker_ids:
-                    bbox = state["detections"].xyxy[i]
-                    speed = state["speed_values"].get(tracker_id, 0)
+                    bbox = state["detections"].xyxy[i].copy()  # Copy BBox an toàn
 
-                    plate_im = extract_plate_region(state["frame"], bbox)
+                    plate_im = extract_plate_region(state["frame"].copy(), bbox)
 
-                    plate_number = ""
-                    for label in final_labels:
-                        if f"#{tracker_id}" in label and "|" in label:
-                            plate_number = label.split("|")[-1].strip()
-                            break
+                    task_id = f"{state['frame_id']}_{tracker_id}"
 
-                    plate_for_filename = plate_number.replace('-', '') if plate_number else "NO_PLATE"
-
-                    filename = f"{state['frame_id']:05d}_{tracker_id}_{speed:.1f}kmh_{plate_for_filename}.png"
-                    filepath = os.path.join(output_dir, filename)
-
-                    cv2.imwrite(filepath, plate_im)
-                    print(f"[OCR DEBUG] Saved plate image for #{tracker_id} to {filepath}")
-
-        for label in final_labels:
-            if "km/h" in label:
-                try:
-                    tracker_id = int(label.split()[0].replace("#", ""))
-                    
-                    if tracker_id in violation_tracker_ids:
-                        plate_number = label.split("|")[-1].strip()
-                        
-                        if plate_number == "":
-                            continue
-                        
-                        violation_plates.append({
+                    try:
+                        ocr_queue.put_nowait({
+                            "task_id": task_id,
                             "frame_id": state["frame_id"],
                             "tracker_id": tracker_id,
-                            "license_plate": plate_number
+                            "plate_im": plate_im
                         })
-                        print(f"[OCR] Vehicle #{tracker_id}: Plate = {plate_number}")
-                except Exception as e:
-                    print(f"[OCR] Error parsing label '{label}': {e}")
-                    
-        print(f"[OCR] Extracted {len(violation_plates)} plates from violations")
-        
+                        print(f"[OCR DISPATCH] Task {task_id} added to queue.")
+                    except queue.Full:
+                        print(f"[OCR DISPATCH] WARNING: OCR queue is full. Skipping task {task_id}.")
+
         return {
             **state,
-            "violation_plates": violation_plates,
             "next": "end"
         }
-        
+
     except Exception as e:
-        print(f"[OCR] Error in ocr_plate: {e}")
+        print(f"[OCR] Error in ocr_plate dispatcher: {e}")
         return {
             **state,
-            "violation_plates": [],
             "next": "end"
         }
-        
+
+
 def save_db(state: TrafficState) -> TrafficState:
     """
     Save violations to db

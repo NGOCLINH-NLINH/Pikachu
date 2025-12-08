@@ -1,56 +1,96 @@
 import numpy as np
 import supervision as sv
-import easyocr
 import cv2
 from typing import List
 import re
+import os
+import base64
+
+from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+API_BASE_URL = "https://api.tokenfactory.nebius.com/v1/"
+MODEL_NAME = "nvidia/Nemotron-Nano-V2-12b"
+API_KEY = os.environ.get("API_KEY")
 
 
 class PlateReader:
 
     def __init__(self):
-        # Initialize EasyOCR with GPU disabled and with verbose=False to speed up initialization
-        self.reader = easyocr.Reader(['en', 'vi'], gpu=False, verbose=False)
+        if not API_KEY:
+            raise EnvironmentError("API_KEY is not set.")
+
+        self.client = OpenAI(
+            base_url=API_BASE_URL,
+            api_key=API_KEY
+        )
+        print(f"VLM API Client initialized for {MODEL_NAME}.")
 
     def preprocess_plate_image(self, plate_im: np.ndarray) -> np.ndarray:
-        # convert to gray scale
-        scale_factor = 2
-        plate_im = cv2.resize(
-            plate_im,
-            (0,0),
-            fx=scale_factor,
-            fy=scale_factor,
-            interpolation=cv2.INTER_CUBIC
+        return plate_im
+
+    def _recognize_plate_via_vlm(self, plate_im: np.ndarray) -> str:
+
+        _, buffer = cv2.imencode('.jpg', plate_im)
+        base64_data = base64.b64encode(buffer).decode("utf-8")
+
+        system_prompt = (
+            "You are a STRICT, expert, and highly efficient ALPR processor. "
+            "Your output MUST be ONLY one single string containing the license plate characters. "
+            "You must NOT include ANY explanatory text, formatting, or analysis (like 'Okay, the plate is...'). "
+            "If you successfully read the plate, output the raw characters (letters and numbers) without spaces or hyphens. "
+            "If no plate is clearly visible, output ONLY the text 'NO_PLATE'."
         )
-        if len(plate_im.shape) ==3:
-            gray = cv2.cvtColor(plate_im, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = plate_im
 
-        # increase contrast
-        # gray = cv2.convertScaleAbs(gray, alpha=1.5, beta=0)
+        user_prompt = "Identify the license plate number from the provided image. STRICTLY follow the output format guidelines."
 
-        # denoise
-        # denoised = cv2.fastNlMeansDenoising(gray)
+        human_content = [
+            {"type": "text",
+             "text": "Identify the license plate number from the provided image. Output ONLY the raw characters (letters and numbers)."},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_data}"}}
+        ]
 
-        # thresholding
-        # thresh = cv2.adaptiveThreshold(
-        #     denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        #     cv2.THRESH_BINARY, 11, 2
-        # )
+        try:
+            response = self.client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": human_content}
+                ]
+            )
 
-        return gray
+            if response.choices:
+                raw_response_content = response.choices[0].message.content
+                pattern = r'(?:</think>\s*)([A-Z0-9\s.-]+)'
+                match = re.search(pattern, raw_response_content, re.IGNORECASE | re.DOTALL)
+                if match:
+                    raw_text = match.group(1).split('\n')[0].strip()
+                else:
+                    raw_text = raw_response_content.strip()
+
+                if raw_text.strip().upper() == 'NO_PLATE':
+                    return ""
+
+                return raw_text.strip()
+
+            return ""
+
+        except Exception as e:
+            print(f"LỖI VLM API: {e}")
+            return ""
 
     def clean_plate_text(self, text: str) -> str:
-        text = text.strip().upper()
+        text = text.replace(' ', '').replace('-', '')
 
-        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-")
+        allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         text = "".join(c for c in text if c in allowed)
 
         patterns = [
-            r'(\d{2}[A-Z])-?(\d{4,5})',  # 30A-12345 or 30A12345
-            r'(\d{2})-?([A-Z]\d{4,5})',  # 30-A12345
-            r'(\d{2}[A-Z])(\d{4,5})'     # 30A12345 (no dash)
+            r'(\d{2}[A-Z])-?(\d{4,5})',
+            r'(\d{2})-?([A-Z]\d{4,5})',
+            r'(\d{2}[A-Z])(\d{4,5})'
         ]
 
         for pattern in patterns:
@@ -62,16 +102,14 @@ class PlateReader:
         return text if len(text) >= 5 else ""
 
     def read_plate(self, plate_im: np.ndarray) -> str:
-        processed = self.preprocess_plate_image(plate_im)
 
-        results_list = self.reader.readtext(processed, detail=0)
+        text = self._recognize_plate_via_vlm(plate_im)
 
-        if results_list:
-            text = "".join(results_list)
-            print(f"[OCR RAW] Full recognized string (detail=0): {text}")
-        else:
-            print("[OCR RAW] EasyOCR returned no results.")
+        if not text:
+            print("[OCR RAW] VLM API returned no results or 'NO_PLATE'.")
             return ""
+
+        print(f"[OCR RAW] Full recognized string (VLM API): {text}")
 
         plate_number = self.clean_plate_text(text)
 
@@ -80,17 +118,18 @@ class PlateReader:
 
         return plate_number
 
+
 def extract_plate_region(
-    frame: np.ndarray,
-    bbox: np.ndarray,
-    expand_ratio: float = 0.2
+        frame: np.ndarray,
+        bbox: np.ndarray,
+        expand_ratio: float = 0.2
 ) -> np.ndarray:
     x1, y1, x2, y2 = bbox.astype(int)
 
     height = y2 - y1
     width = x2 - x1
 
-    plate_y1 = int(y2 - height * 0.4) # 30% from bottom
+    plate_y1 = int(y2 - height * 0.4)  # 30% from bottom
     plate_y2 = y2
 
     expand_x = int(width * expand_ratio)
@@ -100,6 +139,7 @@ def extract_plate_region(
     plate_im = frame[plate_y1:plate_y2, plate_x1:plate_x2]
 
     return plate_im
+
 
 def extract_and_read_plate(
         frame: np.ndarray,

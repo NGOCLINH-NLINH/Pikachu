@@ -17,8 +17,8 @@ def report_agent(plate_number: str, speed: float, speed_limit: float) -> str:
     load_dotenv()
     llm_agent = ChatOpenAI(
         api_key=os.environ.get("API_KEY"),
-        base_url="https://api.z.ai/api/coding/paas/v4/",
-        model="glm-4.6",
+        base_url="https://api.tokenfactory.nebius.com/v1/",
+        model="moonshotai/Kimi-K2-Thinking",
         temperature=0.2,
     )
 
