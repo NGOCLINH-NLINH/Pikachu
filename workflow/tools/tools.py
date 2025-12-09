@@ -11,12 +11,12 @@ def lookup_db(plate_number: str) -> str:
     """
     # Hardcoded vehicle data
     vehicle_data = {
-        "BHSTSO": {
+        "29L-11156": {
             "id": "001304005771",
-            "owner": "Ng Ngoc Linh",
+            "owner": "Nguyen Ngoc Linh",
             "phone": "0905123456",
             "address": "123 Duong Hoa",
-            "vehicle_type": "car",
+            "vehicle_type": "motorbike",
             "registered": True,
         },
         "KJHRUI": {

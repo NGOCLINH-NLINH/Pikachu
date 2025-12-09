@@ -174,7 +174,7 @@ def process_video(
     print(f"Kích thước khung hình: {video_info.width}x{video_info.height}, FPS: {video_info.fps}")
 
     BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-    output_path = os.path.join(BASE_DIR, "inference_service", "output", "output.avi")
+    output_path = os.path.join(BASE_DIR, "inference_service", "output", "output_hehe.avi")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -259,23 +259,44 @@ def process_video(
         speed_values = result.get("speed_values", {})
 
         if detections is not None and detections.tracker_id is not None:
-            tracker_ids = list(detections.tracker_id)
+            for det_idx in range(len(detections)):
+                track_id = int(detections.tracker_id[det_idx])
 
-            for track_id, speed in speed_values.items():
-                if track_id not in tracker_ids:
-                    continue
+                if track_id in speed_values:
+                    speed = speed_values[track_id]
+                    x1, y1, x2, y2 = detections.xyxy[det_idx]
 
-                idx = tracker_ids.index(track_id)
-                x1, y1, x2, y2 = detections.xyxy[idx]
+                    anchor = sv.Point(int(x1), int(y1) - 12)
+                    text = f"{speed:.1f} km/h"
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.9
+                    thickness = 2
 
-                # Draw speed above bounding box
-                anchor = sv.Point(int(x1), int(y1) - 10)
+                    (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
 
-                sv.draw_text(
-                    scene=annotated_frame,
-                    text=f"{speed:.1f} km/h",
-                    text_anchor=anchor,
-                )
+                    text_x = int(x1)
+                    text_y = int(y1) - 10
+                    if text_y < text_h:
+                        text_y = text_h + 5
+
+                    cv2.rectangle(
+                        annotated_frame,
+                        (text_x, text_y - text_h - 4),
+                        (text_x + text_w + 4, text_y + 4),
+                        (0, 0, 0),  # black background
+                        -1  # filled
+                    )
+
+                    cv2.putText(
+                        annotated_frame,
+                        text,
+                        (text_x + 2, text_y),
+                        font,
+                        font_scale,
+                        (0, 255, 255),  # yellow text
+                        thickness,
+                        cv2.LINE_AA
+                    )
 
         # Write final annotated frame
         writer.write(annotated_frame)

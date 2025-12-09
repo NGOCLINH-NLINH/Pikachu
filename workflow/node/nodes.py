@@ -1,6 +1,8 @@
 import multiprocessing
+import os
 import queue
 
+import cv2
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from workflow.state import TrafficState
 from inference_service.detector import process_detection
@@ -8,13 +10,15 @@ from inference_service.plate_reader import extract_and_read_plate, extract_plate
 from workflow.tools.tools import save_violation
 from workflow.agents.report_agent import report_agent
 import json
-import os
 from datetime import datetime
 from pathlib import Path
-import cv2
 
 # Global variable to store CV models
 cv_models = {}
+ocr_dispatched_tracker_ids = set()
+
+PLATES_DIR = os.path.join("inference_service", "output", "plates")
+os.makedirs(PLATES_DIR, exist_ok=True)
 
 def detect_vehicle(state: TrafficState) -> TrafficState:
     """
@@ -143,8 +147,8 @@ def check_violation(state: TrafficState) -> TrafficState:
         }
 
 
-ocr_results = None
-ocr_queue = None
+ocr_results: multiprocessing.managers.DictProxy = None
+ocr_queue: multiprocessing.JoinableQueue = None
 
 def init_multiprocessing_resources():
     global ocr_results, ocr_queue
@@ -154,50 +158,58 @@ def init_multiprocessing_resources():
 
 
 def ocr_plate(state: TrafficState) -> TrafficState:
-    try:
-        if state["violations"] is None or not state["violations"]:
-            return {
-                **state,
-                "violation_plates": [],
-                "next": "end"
-            }
+    global ocr_dispatched_tracker_ids, ocr_queue, ocr_results
 
-        violation_tracker_ids = [v["tracker_id"] for v in state["violations"]]
+    try:
+        if not state["violations"]:
+            return {**state, "next": "end"}
+
+        current_violation_ids = {v["tracker_id"] for v in state["violations"]}
 
         if state["detections"] is not None and state["detections"].tracker_id is not None:
-
             for i in range(len(state["detections"])):
                 tracker_id = state["detections"].tracker_id[i]
 
-                if tracker_id in violation_tracker_ids:
-                    bbox = state["detections"].xyxy[i].copy()  # Copy BBox an toàn
+                if tracker_id in current_violation_ids:
 
+                    if tracker_id in ocr_dispatched_tracker_ids:
+                        continue
+
+                    ocr_dispatched_tracker_ids.add(tracker_id)
+
+                    bbox = state["detections"].xyxy[i].copy()
                     plate_im = extract_plate_region(state["frame"].copy(), bbox)
 
-                    task_id = f"{state['frame_id']}_{tracker_id}"
+                    plate_filename = f"plate_f{state['frame_id']}_t{tracker_id}.jpg"
+                    plate_path = os.path.join(PLATES_DIR, plate_filename)
 
                     try:
+                        cv2.imwrite(plate_path, plate_im)
+                        print(f"[PLATE SAVE] Saved: {plate_path}")
+                    except Exception as e:
+                        print(f"[PLATE SAVE ERROR] Could not save plate: {e}")
+
+                    try:
+                        task_id = f"{state['frame_id']}_{tracker_id}"
+
                         ocr_queue.put_nowait({
                             "task_id": task_id,
                             "frame_id": state["frame_id"],
                             "tracker_id": tracker_id,
                             "plate_im": plate_im
                         })
-                        print(f"[OCR DISPATCH] Task {task_id} added to queue.")
-                    except queue.Full:
-                        print(f"[OCR DISPATCH] WARNING: OCR queue is full. Skipping task {task_id}.")
 
-        return {
-            **state,
-            "next": "end"
-        }
+                        print(f"[OCR DISPATCH] Tracker #{tracker_id} → sent ONCE to queue")
+
+                    except queue.Full:
+                        print(f"[OCR DISPATCH] Queue FULL → Skipped tracker #{tracker_id}")
+
+        return {**state, "next": "end"}
 
     except Exception as e:
         print(f"[OCR] Error in ocr_plate dispatcher: {e}")
-        return {
-            **state,
-            "next": "end"
-        }
+        return {**state, "next": "end"}
+
 
 
 def save_db(state: TrafficState) -> TrafficState:

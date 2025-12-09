@@ -115,6 +115,7 @@ class PlateReader:
 
         if not plate_number:
             print(f"[OCR RAW] Cleaned text is EMPTY. Raw text was: {text}")
+        # plate_number = "AB-12345"  # Placeholder for testing
 
         return plate_number
 
@@ -129,7 +130,7 @@ def extract_plate_region(
     height = y2 - y1
     width = x2 - x1
 
-    plate_y1 = int(y2 - height * 0.4)  # 30% from bottom
+    plate_y1 = int(y2 - height * 0.5)  # 30% from bottom
     plate_y2 = y2
 
     expand_x = int(width * expand_ratio)

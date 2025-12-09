@@ -11,7 +11,7 @@ class SpeedEstimator:
         self.fps = fps
         self.coordinates = defaultdict(lambda: deque(maxlen=int(fps)))
         self.min_frames_for_speed = max(int(self.fps / 10), 3)
-        self.meter_per_pixel = 0.1
+        self.meter_per_pixel = 0.14
 
     def update_and_estimate(self, detections: sv.Detections) -> list[str]:
         print(f"[SpeedEstimator FPS] FPS {self.fps}")
