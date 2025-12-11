@@ -6,6 +6,8 @@ venv/
 *.onnx
 *.h5
 *.pth
-/.idea
+.idea/
+.vscode/
 .env
-inference_service/data
+report/
+inference_service/data/

@@ -1,7 +1,7 @@
 from collections import defaultdict, deque
 import numpy as np
 import supervision as sv
-from detector import ViewTransformer
+from inference_service.detector import ViewTransformer
 
 
 class SpeedEstimator:
@@ -10,9 +10,11 @@ class SpeedEstimator:
         self.view_transformer = view_transformer
         self.fps = fps
         self.coordinates = defaultdict(lambda: deque(maxlen=int(fps)))
-        self.min_frames_for_speed = int(fps / 2)
+        self.min_frames_for_speed = max(int(self.fps / 10), 3)
+        self.meter_per_pixel = 0.14
 
     def update_and_estimate(self, detections: sv.Detections) -> list[str]:
+        print(f"[SpeedEstimator FPS] FPS {self.fps}")
 
         points = detections.get_anchors_coordinates(anchor=sv.Position.BOTTOM_CENTER)
         transformed_points = self.view_transformer.transform_points(points=points).astype(int)
@@ -30,10 +32,11 @@ class SpeedEstimator:
                 coordinate_end = self.coordinates[tracker_id][-1]
 
                 distance = abs(coordinate_start - coordinate_end)
+                distance_m = distance * self.meter_per_pixel
 
                 time = len(self.coordinates[tracker_id]) / self.fps
 
-                speed = distance / time * 3.6
+                speed = distance_m / time * 3.6
 
                 labels.append(f"#{tracker_id} {int(speed)} km/h")
 

@@ -5,7 +5,7 @@ import cv2
 import supervision as sv
 from detector import initialize_detector, process_detection
 from speed_estimator import SpeedEstimator
-from plate_reader import extract_and_read_plate  # Import module mới
+from plate_reader import extract_and_read_plate  
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -13,7 +13,7 @@ def parse_arguments() -> argparse.Namespace:
         description="Vehicle Speed Estimation and Plate Extraction Service"
     )
     parser.add_argument(
-        "--source_video_path", default="data/vehicles.mp4", help="Path to the source video file", type=str,
+        "--source_video_path", default="data/plate.mp4", help="Path to the source video file", type=str,
     )
     parser.add_argument(
         "--target_video_path", default="output/output.mp4", help="Path to the target video file (output)", type=str,

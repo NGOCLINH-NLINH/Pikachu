@@ -1,0 +1,16 @@
+opencv-python~=4.10.0.84
+supervision~=0.26.1
+ultralytics~=8.3.223
+numpy~=2.2.6
+easyocr~=1.7.2
+langgraph~=1.0.4
+langchain
+langchain-openai
+python-dotenv~=1.0.1
+argparse~=1.4.0
+fastapi~=0.115.14
+openai~=1.109.1
+starlette~=0.46.2
+streamlit~=1.52.1
+requests~=2.32.3
+pandas~=2.2.3
