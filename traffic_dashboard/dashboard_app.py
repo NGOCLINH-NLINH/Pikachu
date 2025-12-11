@@ -46,12 +46,6 @@ def render_violation_ticket(detail):
                   delta=f"Giới hạn: {detail['speed_limit']} km/h")
         st.info(f"**Địa điểm:** {detail['location']} - **Thời gian:** {detail['timestamp']}")
 
-        # Giả lập hiển thị ảnh bằng chứng
-        proof_path = detail.get("proof_image_path")
-        if proof_path and Path(proof_path).exists():
-            st.image(proof_path, caption="Ảnh bằng chứng vi phạm", use_column_width=True)
-        else:
-            st.warning("🖼 Không tìm thấy ảnh bằng chứng.")
 
     with col2:
         st.subheader("Thông tin Chủ xe")

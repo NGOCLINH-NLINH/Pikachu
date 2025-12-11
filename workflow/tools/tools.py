@@ -19,12 +19,12 @@ def lookup_db(plate_number: str) -> str:
             "vehicle_type": "motorbike",
             "registered": True,
         },
-        "KJHRUI": {
+        "29E-30047": {
             "id": "001304021054",
-            "owner": "Nhanntt",
+            "owner": "Nguyen Thi Thanh Nhan",
             "phone": "0905987654",
             "address": "456 O Dien",
-            "vehicle_type": "motorbike",
+            "vehicle_type": "car",
             "registered": True,
         },
         "IM7STYSU": {
